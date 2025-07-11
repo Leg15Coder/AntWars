@@ -55,4 +55,3 @@ class DatsPulseClient:
         else:
             print(f"Ошибка регистрации: {response.status_code} - {response.text}")
             return -1
-
