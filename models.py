@@ -22,6 +22,34 @@ class FoodType(Enum):
     NECTAR = 3
 
 
+ANTS_PROPERTY = {
+    AntType.SCOUT: {
+        'max_health': 80,
+        'damage': 20,
+        'capacity': 2,
+        'view_range': 4,
+        'speed': 7,
+        'spawn_rate': 0.1
+    },
+    AntType.SOLDIER: {
+            'max_health': 180,
+            'damage': 70,
+            'capacity': 2,
+            'view_range': 1,
+            'speed': 4,
+            'spawn_rate': 0.3
+        },
+    AntType.WORKER: {
+            'max_health': 130,
+            'damage': 30,
+            'capacity': 8,
+            'view_range': 1,
+            'speed': 5,
+            'spawn_rate': 0.6
+        },
+}
+
+
 class Hex:
     def __init__(self, q: int, r: int, hex_type: HexType, cost: int):
         self.q = q
@@ -53,6 +81,10 @@ class Ant:
                  last_enemy_ant: Optional[str] = None):
         self.id = ant_id
         self.type = ant_type
+
+        for attr, val in ANTS_PROPERTY.get(self.type, dict()).items():
+            exec(f"self.{attr} = {val}")
+
         self.q = q
         self.r = r
         self.hex = (self.q, self.r)
@@ -71,6 +103,10 @@ class EnemyAnt:
     def __init__(self, ant_type: AntType, q: int, r: int, health: int,
                  food: Optional[Dict] = None, attack: Optional[int] = None):
         self.type = ant_type
+
+        for attr, val in ANTS_PROPERTY.get(self.type, dict()).items():
+            exec(f"self.{attr} = {val}")
+
         self.q = q
         self.r = r
         self.hex = (self.q, self.r)

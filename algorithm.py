@@ -1,4 +1,7 @@
 from typing import *
+
+import random
+
 from client import *
 from gamestate import *
 
@@ -87,7 +90,7 @@ class Strategy:
         # Ищем ближайшее тёмное пятно
         unexplored = self.find_closest_unexplored(ant.q, ant.r, state)
         if unexplored:
-            return self.find_path(ant.q, ant.r, unexplored[0], unexplored[1], state)
+            return self.find_path(ant.q, ant.r, ant.speed, unexplored[0], unexplored[1], state)
         return list()
 
     def soldier_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
@@ -98,7 +101,7 @@ class Strategy:
             if PathFinder.hex_distance((ant.q, ant.r), (closest_enemy.q, closest_enemy.r)) <= 1:
                 # Если сражаемся - не надо двигаться
                 return list()
-            return self.find_path(ant.q, ant.r, closest_enemy.q, closest_enemy.r, state)
+            return self.find_path(ant.q, ant.r, ant.speed, closest_enemy.q, closest_enemy.r, state)
 
         # Если нет врагов - патрулируем колонию
         home_hex = state.spot
@@ -109,7 +112,7 @@ class Strategy:
             if valid_neighbors:
                 return [random.choice(valid_neighbors)]
         else:
-            return self.find_path(ant.q, ant.r, home_hex['q'], home_hex['r'], state)
+            return self.find_path(ant.q, ant.r, ant.speed, home_hex['q'], home_hex['r'], state)
 
         return list()
 
@@ -119,7 +122,7 @@ class Strategy:
             home_hex = state.spot
             if ant.hex == (home_hex['q'], home_hex['r']):
                 return list()  # уже в колонии
-            return self.find_path(ant.q, ant.r, home_hex['q'], home_hex['r'], state)
+            return self.find_path(ant.q, ant.r, ant.speed, home_hex['q'], home_hex['r'], state)
 
         # Видим еду - идём за ней
         if state.food:
@@ -127,7 +130,7 @@ class Strategy:
                                key=lambda f: PathFinder.hex_distance((ant.q, ant.r), (f.q, f.r)))
             if (ant.q, ant.r) == (closest_food.q, closest_food.r):
                 return list()  # уже в колонии
-            return self.find_path(ant.q, ant.r, closest_food.q, closest_food.r, state)
+            return self.find_path(ant.q, ant.r, ant.speed, closest_food.q, closest_food.r, state)
 
         # Если нет еды - исследуем территорию в её поисках
         return self.scout_strategy(ant, state)
@@ -144,7 +147,7 @@ class Strategy:
             return min(edge_hexes, key=lambda h: PathFinder.hex_distance((q, r), h))
         return None
 
-    def find_path(self, start_q: int, start_r: int, target_q: int, target_r: int,
+    def find_path(self, start_q: int, start_r: int, speed: int, target_q: int, target_r: int,
                   state: GameState) -> List[Tuple[int, int]]:
         """
          Простой поиск пути с использованием алгоритма A*
@@ -167,7 +170,7 @@ class Strategy:
                     # Проверяем занят ли гекс
                     occupied = False
                     for ant in state.ants:
-                        if ant.q == nq and ant.r == nr and ant.id != state.get_ant_by_id(current_q, current_r):
+                        if ant.q == nq and ant.r == nr: #and ant.id != state.get_ant_by_id(current_q, current_r):
                             occupied = True
                             break
                     if not occupied:
@@ -181,8 +184,8 @@ class Strategy:
                             key=lambda h: PathFinder.hex_distance(h, (target_q, target_r)))
             path.append(next_step)
             current_q, current_r = next_step
-
-            if len(path) > 10:  # предел длины пути
+            speed -= 1
+            if speed == 0:
                 break
 
         return path

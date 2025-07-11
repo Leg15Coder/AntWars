@@ -2,30 +2,54 @@ import matplotlib.pyplot as plt
 import numpy as np
 from models import *
 from matplotlib.patches import RegularPolygon
+from matplotlib.font_manager import FontProperties
+from threading import Thread
+from queue import Queue
+import time
 
 
-class HexMapVisualizer:
-    @staticmethod
-    def draw_map(game_state, title="DatsPulse Map"):
-        """
-        визуализация гексагональной карты без предупреждений
+class AsyncVisualizer:
+    def __init__(self):
+        self.queue = Queue()
+        self.thread = Thread(target=self._visualization_thread, daemon=True)
+        self.thread.start()
+        self.emoji_font = self._find_emoji_font()
+        self.is_running = True
 
-        Параметры:
-            game_state: объект GameState с данными о карте
-            title: заголовок графика
-        """
-        fig, ax = plt.subplots(figsize=(12, 12))
-        ax.set_aspect('equal')
-        ax.set_title(title, pad=20)
-        ax.set_facecolor('lightgray')
+    def _visualization_thread(self):
+        plt.ion()  # Включаем интерактивный режим
+        self.fig, self.ax = plt.subplots(figsize=(10, 10))
+        self.ax.set_aspect('equal')
+
+        while self.is_running:
+            if not self.queue.empty():
+                game_state = self.queue.get()
+                self._draw_map(game_state)
+                plt.pause(0.1)  # Короткая пауза для обновления графика
+            time.sleep(0.1)  # Проверяем очередь 10 раз в секунду
+
+    def _find_emoji_font(self):
+        """Пытаемся найти шрифт с поддержкой эмодзи"""
+        try:
+            # Альтернативный вариант для Windows/Linux
+            return FontProperties(fname='/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf')
+        except:
+            # Если не нашли, используем системный шрифт (эмодзи могут отображаться как квадратики)
+            return FontProperties(family='sans-serif')
+
+    def _draw_map(self, game_state):
+        """Функция отрисовки карты (аналогичная предыдущей реализации)"""
+        self.ax.clear()
+        self.ax.set_title(f"DatsPulse Map - Turn {game_state.turn_no}")
+        self.ax.set_facecolor('lightgray')
 
         # Цвета для разных типов гексов
         hex_colors = {
-            HexType.ANTHILL: '#ff9999',  # светло-красный
-            HexType.EMPTY: '#f0f0f0',  # очень светлый серый
-            HexType.DIRT: '#d2b48c',  # tan цвет
-            HexType.ACID: '#90ee90',  # светло-зеленый
-            HexType.STONE: '#333333'  # темно-серый
+            HexType.ANTHILL: '#68006C',
+            HexType.EMPTY: '#f0f0f0',
+            HexType.DIRT: '#007730',
+            HexType.ACID: '#A2000C',
+            HexType.STONE: '#333333'
         }
 
         # Собираем координаты для определения границ
@@ -46,11 +70,11 @@ class HexMapVisualizer:
                 edgecolor='#888888',  # серый
                 linewidth=0.5
             )
-            ax.add_patch(hex_patch)
+            self.ax.add_patch(hex_patch)
 
             # Подписываем только основные координаты для уменьшения нагромождения
             if abs(q) <= 2 or abs(r) <= 2 or q == 0 or r == 0:
-                ax.text(x, y, f"{q},{r}", ha='center', va='center', fontsize=6, color='#555555')
+                self.ax.text(x, y, f"{q},{r}", ha='center', va='center', fontsize=6, color='#555555')
 
         # Рисуем муравьев
         ant_colors = {
@@ -63,16 +87,24 @@ class HexMapVisualizer:
             q, r = ant.q, ant.r
             x = q * 0.866
             y = r + q * 0.5
+
+            if ant.type == AntType.SCOUT:
+                x -= 0.2
+                y -= 0.2
+            elif ant.type == AntType.WORKER:
+                y += 0.21
+            else:
+                x += 0.2
+                y -= 0.2
+
             color = ant_colors.get(ant.type, '#000000')
-            ax.plot(x, y, marker='o', markersize=8, color=color, markeredgecolor='black', markeredgewidth=0.5)
-            ax.text(x, y + 0.25, f"{ant.type.name[:1]}", ha='center', va='center',
-                    fontsize=8, weight='bold', color='white')
+            self.ax.plot(x, y, marker='o', markersize=8, color=color, markeredgecolor='black', markeredgewidth=0.5)
 
         # Рисуем ресурсы
         food_symbols = {
-            FoodType.APPLE: 'A',
-            FoodType.BREAD: 'B',
-            FoodType.NECTAR: 'N'
+            FoodType.APPLE: '🍎',
+            FoodType.BREAD: '🍞',
+            FoodType.NECTAR: '🍯'
         }
 
         for food in game_state.food:
@@ -80,8 +112,8 @@ class HexMapVisualizer:
             x = q * 0.866
             y = r + q * 0.5
             symbol = food_symbols.get(food.type, '?')
-            ax.text(x, y - 0.25, f"{symbol}{food.amount}",
-                    ha='center', va='center', fontsize=10)
+            self.ax.text(x, y - 0.25, f"{symbol}{food.amount}",
+                    ha='center', va='center', fontsize=8)
 
         # Устанавливаем границы с запасом
         margin = 1.5
@@ -90,9 +122,18 @@ class HexMapVisualizer:
         min_y = min(r + q * 0.5 for q, r in zip(all_q, all_r)) - margin
         max_y = max(r + q * 0.5 for q, r in zip(all_q, all_r)) + margin
 
-        ax.set_xlim(min_x, max_x)
-        ax.set_ylim(min_y, max_y)
-        ax.axis('off')
+        self.ax.set_xlim(min_x, max_x)
+        self.ax.set_ylim(min_y, max_y)
+        self.ax.axis('off')
 
-        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
-        plt.show()
+        plt.draw()
+
+    def update(self, game_state):
+        """Добавить новое состояние карты в очередь для отрисовки"""
+        self.queue.put(game_state)
+
+    def close(self):
+        """Завершить работу визуализатора"""
+        self.is_running = False
+        self.thread.join()
+        plt.close(self.fig)
