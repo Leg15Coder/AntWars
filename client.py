@@ -1,6 +1,7 @@
 import requests
 import time
 from typing import *
+from gamestate import *
 
 
 class DatsPulseClient:
@@ -8,13 +9,13 @@ class DatsPulseClient:
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
         self.session = requests.Session()
-        self.session.headers.update({'Authorization': f'Bearer {self.api_key}'})
+        self.session.headers.update({'X-Auth-Token': f'{self.api_key}'})
         self.last_request_time = 0
 
     def _rate_limit(self):
         elapsed = time.time() - self.last_request_time
-        if elapsed < 0.34:
-            time.sleep(0.34 - elapsed)
+        if elapsed < 0.35:
+            time.sleep(0.35 - elapsed)
         self.last_request_time = time.time()
 
     def get_arena_state(self) -> GameState:
@@ -43,3 +44,13 @@ class DatsPulseClient:
         response = self.session.get(f'{self.base_url}/api/logs')
         response.raise_for_status()
         return response.json()
+
+    def register(self) -> int:
+        response = self.session.post(f'{self.base_url}/api/register', json=dict())
+        if response.status_code == 200:
+            print("Регистрация прошла успешно")
+            return response.json()["lobbyEndsIn"]
+        else:
+            print(f"Ошибка регистрации: {response.status_code} - {response.text}")
+            return -1
+
