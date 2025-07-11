@@ -3,6 +3,8 @@ import time
 from typing import *
 from gamestate import *
 
+from gamestate import GameState
+
 
 class DatsPulseClient:
     def __init__(self, base_url: str, api_key: str):
