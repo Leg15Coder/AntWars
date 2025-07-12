@@ -60,7 +60,7 @@ class AsyncVisualizer:
                 game_state = self.queue.get()
                 self._draw_map(game_state)
                 plt.pause(0.1)  # Короткая пауза для обновления графика
-            time.sleep(0.5)  # Проверяем очередь 2 раза в секунду
+            time.sleep(0.2)
 
     def set_figure_position(self, monitor_num=1):
         """Устанавливает позицию окна на указанном мониторе"""

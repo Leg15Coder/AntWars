@@ -79,7 +79,7 @@ class PathFinder:
 
     @staticmethod
     def heuristic(current: Hex, target: Tuple[int, int]) -> float:
-        return PathFinder.hex_distance(current.hex, target) + (4 if current.type == HexType.ACID else 0)
+        return PathFinder.hex_distance(current.hex, target) + (3 if current.type == HexType.ACID else 0)
 
 
 class Strategy:
@@ -94,12 +94,16 @@ class Strategy:
 
         for ant in state.ants:
             if ant.type == AntType.SCOUT:
+                for q, r in PathFinder.get_neighbors(*ant.hex):
+                    if not state.get_hex(q, r):
+                        self.memory.map[(q, r)] = Hex(q, r, HexType.FAR, 1)
+
                 path = self.scout_strategy(ant, state)
             elif ant.type == AntType.SOLDIER:
                 path = self.soldier_strategy(ant, state)
             else:  # AntType.WORKER
                 path = self.worker_strategy(ant, state)
-            # print(ant.hex, self.memory.roles.get(ant.id, AntRole.SIMPLE), path, ant.id)
+            # print(ant.hex, self.memory.roles.get(ant.id, AntRole.SIMPLE), path, ant.id, 'FOOD' if ant.food else '')
 
             if path:
                 path.pop(0)
@@ -158,8 +162,8 @@ class Strategy:
             # Кольцевые позиции
             ring_positions = PathFinder.hex_in_area(center, small_radius=radius, big_radius=radius)
             ring_positions = ring_positions[::spacing]
-            ring_positions = list(filter(lambda h: not state.get_hex(*h) or state.get_hex(*h).type not in (
-                HexType.ANTHILL, HexType.STONE, HexType.ACID), ring_positions))
+            ring_positions = list(filter(lambda h: h not in self.memory.map or self.memory.map[h].type not in (
+                HexType.ANTHILL, HexType.STONE, HexType.ACID, HexType.FAR), ring_positions))
 
             if ant.hex in ring_positions:
                 return list()
@@ -174,25 +178,26 @@ class Strategy:
 
     def scout_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
         role = self.memory.roles.get(ant.id, AntRole.SIMPLE)
-        if ant.type != AntType.SCOUT:
-            return [ant.hex, random.choice(PathFinder.get_neighbors(*ant.hex))]
 
-        if role == AntRole.SIMPLE:
-            role = choice((AntRole.DEFENDER, AntRole.SCOUT, AntRole.SCOUT))
+        if role == AntRole.SIMPLE and ant.type == AntType.SCOUT:
+            role = choice((AntRole.DEFENDER, AntRole.SCOUT, AntRole.DEFENDER))
             self.memory.roles[ant.id] = role
 
-        if role == AntRole.SCOUT:
+        if role == AntRole.SCOUT or ant.type != AntType.SCOUT:
             hexes = set(self.memory.map.keys()) - set(map(lambda h: h.hex, state.map))
+
             mx = max(set(self.memory.map.keys()))
             mn = min(set(self.memory.map.keys()))
-            hexes |= {(mx[0] + 1, mx[1] + 1), (mn[0] - 1, mn[0] - 1)}
+            hexes |= {(mx[0] + 1, mx[1] + 1), (mn[0] - 1, mn[1] - 1)}
+            hexes = {h for h in hexes if h not in self.memory.map or self.memory.map[h].type != HexType.FAR}
+
             hex = min(hexes, key=lambda h: PathFinder.hex_distance(h, ant.hex))
             return self.find_path(*ant.hex, *hex, state, subject=ant)
 
         if role == AntRole.DEFENDER:
             home_q, home_r = state.spot['q'], state.spot['r']
             home_hex = (home_q, home_r)
-            return self.stay_in_range(ant, 9, 25, 6, center=home_hex, state=state)
+            return self.stay_in_range(ant, 9, 25, 7, center=home_hex, state=state)
 
         return list() if state.get_hex(*ant.hex).type not in (HexType.ANTHILL, HexType.ACID) \
             else [ant.hex, random.choice(PathFinder.get_neighbors(*ant.hex))]
@@ -215,25 +220,25 @@ class Strategy:
                 return self.find_path(ant.q, ant.r, *enemy.hex, state, subject=ant)
 
         if role == AntRole.DEFENDER:
-            return self.stay_in_range(ant, 7, 12, 3, center=home_hex, state=state)
+            return self.stay_in_range(ant, 9, 16, 7, center=home_hex, state=state)
 
         if role == AntRole.ESCORT or role == AntRole.ARMY and not self.memory.have_attack:
             # Сопровождаем рабочих, идущих от базы
             workers_on_mission = {
                 a for a in state.ants
-                if a.type == AntType.WORKER and PathFinder.hex_distance((a.q, a.r), home_hex) > 3
+                if a.type == AntType.WORKER and PathFinder.hex_distance((a.q, a.r), home_hex) > 7
             }
             if workers_on_mission:
                 nearest_worker = min(workers_on_mission, key=lambda w: PathFinder.hex_distance(ant_hex, (w.q, w.r)))
                 return self.find_path(ant.q, ant.r, nearest_worker.q, nearest_worker.r, state, subject=ant)
 
-        return list() if state.get_hex(*ant_hex).type not in (HexType.ANTHILL, HexType.ACID)\
-            else [ant.hex, random.choice(PathFinder.get_neighbors(*ant_hex))]
+        return [ant.hex, max(PathFinder.get_neighbors(*ant_hex), key=lambda h: PathFinder.hex_distance(ant_hex, h))]
 
     def worker_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
         home_q, home_r = state.spot['q'], state.spot['r']
         spot_hex = (home_q, home_r)
         ant_hex = (ant.q, ant.r)
+        self.memory.roles[ant.id] = AntRole.WORKER
 
         # Если несёт еду - возвращаемся в колонию
         if ant.food:
@@ -245,27 +250,25 @@ class Strategy:
 
         # Угроза: рядом враг-солдат — убегаем к ближайшему своему солдату
         for enemy in state.enemies:
-            if enemy.type == AntType.SOLDIER and PathFinder.hex_distance(ant_hex, enemy.hex) <= 5:
+            if enemy.type == AntType.SOLDIER and PathFinder.hex_distance(ant_hex, enemy.hex) < 3:
                 friendly_soldiers = {a for a in state.ants if a.type == AntType.SOLDIER}
                 if friendly_soldiers:
                     nearest_soldier = min(friendly_soldiers, key=lambda s: PathFinder.hex_distance(ant_hex, (s.q, s.r)))
                     return self.find_path(ant.q, ant.r, nearest_soldier.q, nearest_soldier.r, state, subject=ant)
 
         # Ищем ближайший запас еды, на который ещё не идут другие рабочие
-        if state.food:
-            for available_food in {
-                    f for f in state.food if f.amount > 0
-                         and state.get_hex(*f.hex) not in self.memory.home
-                         and ('ant', AntType.WORKER) not in state.who_at(state.get_hex(*f.hex))
-                }, {f for f in state.food if f.amount > 0
-                         and state.get_hex(*f.hex).type not in self.memory.home
-                         and ('ant', AntType.WORKER) not in state.who_at(state.get_hex(*f.hex))
-                         and (state.get_hex(*f.hex).type == HexType.ACID)}, {f for f in self.memory.food.values() if f.amount > 0
-                         and self.memory.map[f.hex].type not in (HexType.ANTHILL, HexType.ACID)}:
+        for available_food in ({f for f in self.memory.food.values() if f.amount > 0
+                     and self.memory.map[f.hex] not in self.memory.home}, ):
 
-                if available_food:
-                    target_food = min(available_food, key=lambda f: PathFinder.hex_distance(ant_hex, f.hex))
-                    return self.find_path(ant.q, ant.r, target_food.q, target_food.r, state, subject=ant)
+            if available_food:
+                target_food = min(available_food, key=lambda f: PathFinder.hex_distance(ant_hex, f.hex))
+
+                if self.memory.map[target_food.hex].type == HexType.ANTHILL:
+                    for q, r in PathFinder.get_neighbors(*target_food.hex):
+                        if self.memory.map[(q, r)].type != HexType.ANTHILL:
+                            return self.find_path(ant.q, ant.r, q, r, state, subject=ant)
+
+                return self.find_path(ant.q, ant.r, target_food.q, target_food.r, state, subject=ant)
 
         # fallback — разведка
         return self.scout_strategy(ant, state)

@@ -9,6 +9,8 @@ class HexType(Enum):
     ACID = 4
     STONE = 5
 
+    FAR = 6
+
 
 class AntType(Enum):
     WORKER = 0
