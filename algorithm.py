@@ -178,7 +178,7 @@ class Strategy:
             return [ant.hex, random.choice(PathFinder.get_neighbors(*ant.hex))]
 
         if role == AntRole.SIMPLE:
-            role = choice((AntRole.DEFENDER, AntRole.SCOUT))
+            role = choice((AntRole.DEFENDER, AntRole.SCOUT, AntRole.SCOUT))
             self.memory.roles[ant.id] = role
 
         if role == AntRole.SCOUT:
