@@ -32,6 +32,19 @@ class GameState:
                 return ant
         return None
 
+    def who_at(self, hex: Hex) -> Set[Tuple[str, AntType]]:
+        res = set()
+
+        for ant in self.ants:
+            if ant.hex == hex.hex:
+                res.add(('ant', ant.type))
+
+        for ant in self.enemies:
+            if ant.hex == hex.hex:
+                res.add(('enemy', ant.type))
+
+        return res
+
     def get_hex(self, q: int, r: int) -> Optional[Hex]:
         for h in self.map:
             if h.q == q and h.r == r:
