@@ -62,7 +62,7 @@ class PathFinder:
 
     @staticmethod
     def heuristic(current: Hex, target: Tuple[int, int]) -> float:
-        return PathFinder.hex_distance(current.hex, target) + (3 if current.type == HexType.ACID else 0)
+        return PathFinder.hex_distance(current.hex, target) + (3.2 if current.type == HexType.ACID else 0)
 
 
 class Strategy:
@@ -82,6 +82,7 @@ class Strategy:
                 path = self.soldier_strategy(ant, state)
             else:  # AntType.WORKER
                 path = self.worker_strategy(ant, state)
+            print(self.memory.roles.get(ant.id, AntRole.SIMPLE), path[-1] if path else ant.hex)
 
             if path:
                 path.pop(0)
@@ -132,7 +133,7 @@ class Strategy:
 
             # Кольцевые позиции
             ring_positions = PathFinder.hex_in_area(center, small_radius=radius, big_radius=radius)
-            ring_positions = sorted(ring_positions, key=lambda h: (h[0], h[1]))[::spacing]
+            ring_positions = ring_positions[::spacing]
             ring_positions = list(filter(lambda h: not state.get_hex(*h) or state.get_hex(*h).type not in (
                 HexType.ANTHILL, HexType.STONE, HexType.ACID), ring_positions))
 
@@ -171,6 +172,8 @@ class Strategy:
             return self.find_path(*ant.hex, *hex, state, subject=ant)
 
         if role == AntRole.DEFENDER:
+            home_q, home_r = state.spot['q'], state.spot['r']
+            home_hex = (home_q, home_r)
             return self.stay_in_range(ant, 9, 25, 6, center=home_hex, state=state)
 
         return list() if state.get_hex(*ant.hex).type not in (HexType.ANTHILL, HexType.ACID) \
@@ -239,7 +242,7 @@ class Strategy:
                     f for f in state.food if f.amount > 0
                                              and state.get_hex(*f.hex).type != HexType.ANTHILL
                                              and ('ant', AntType.WORKER) not in state.who_at(state.get_hex(*f.hex))
-                                             and (flag ^ (state.get_hex(*f.hex).type == HexType.ACID))
+                                             # and (flag ^ (state.get_hex(*f.hex).type == HexType.ACID))
                 }
 
                 if available_food:
