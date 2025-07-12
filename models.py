@@ -61,6 +61,14 @@ class Hex:
     def __str__(self):
         return f"Hex({self.q}, {self.r}, {self.type.name}, cost={self.cost})"
 
+    def __eq__(self, other):
+        if isinstance(other, Hex) and self.hex == other.hex:
+            return True
+        return False
+
+    def __hash__(self):
+        return hash(self.hex)
+
 
 class Food:
     def __init__(self, q: int, r: int, food_type: FoodType, amount: int):
@@ -97,6 +105,14 @@ class Ant:
 
     def __str__(self):
         return f"Ant({self.id}, {self.type.name}, pos=({self.q}, {self.r}), health={self.health})"
+
+    def __eq__(self, other):
+        if isinstance(other, Ant) and self.id == other.id:
+            return True
+        return False
+
+    def __hash__(self):
+        return hash(self.id)
 
 
 class EnemyAnt:

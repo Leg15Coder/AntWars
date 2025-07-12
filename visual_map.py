@@ -51,6 +51,8 @@ class AsyncVisualizer:
     def _visualization_thread(self):
         plt.ion()  # Включаем интерактивный режим
         self.fig, self.ax = plt.subplots(figsize=(10, 10))
+        plt.title("Map")
+        self.set_figure_position()
         self.ax.set_aspect('equal')
 
         while self.is_running:
@@ -58,7 +60,30 @@ class AsyncVisualizer:
                 game_state = self.queue.get()
                 self._draw_map(game_state)
                 plt.pause(0.1)  # Короткая пауза для обновления графика
-            time.sleep(0.1)  # Проверяем очередь 10 раз в секунду
+            time.sleep(0.5)  # Проверяем очередь 2 раза в секунду
+
+    def set_figure_position(self, monitor_num=1):
+        """Устанавливает позицию окна на указанном мониторе"""
+        try:
+            # Получаем размеры экрана
+            manager = self.fig.canvas.manager
+            if hasattr(manager, 'window'):
+                window = manager.window
+
+                # Для Qt backend
+                if hasattr(window, 'screen'):
+                    screens = window.screen().virtualSiblings()
+                    if len(screens) > monitor_num:
+                        screen = screens[monitor_num]
+                        screen_geometry = screen.geometry()
+                        window.setGeometry(screen_geometry)
+
+                # Для Tk backend
+                elif hasattr(window, 'winfo_screenwidth'):
+                    screen_width = window.winfo_screenwidth()
+                    window.geometry(f"+{screen_width + 100}+100")
+        except Exception as e:
+            print(f"Ошибка позиционирования окна: {e}")
 
     def _load_food_images(self):
         """Загрузка и предварительная обработка изображений"""

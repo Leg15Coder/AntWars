@@ -45,7 +45,7 @@ class PathFinder:
             raise ValueError("Больший радиус должен быть >= малый радиус")
 
         center_q, center_r = center
-        hexes = []
+        hexes = list()
 
         for q in range(-big_radius, big_radius + 1):
             for r in range(max(-big_radius, - big_radius), min(big_radius, + big_radius) + 1):
@@ -91,6 +91,38 @@ class Strategy:
         if moves:
             self.client.send_moves(moves)
 
+    def recall_all_soldiers_to_base(self, state: GameState):
+        base_q, base_r = state.spot['q'], state.spot['r']
+        moves = list()
+
+        for ant in state.ants:
+            if ant.type == AntType.SOLDIER:
+                path = self.find_path(ant.q, ant.r, base_q, base_r, state, subject=ant)
+                if path:
+                    moves.append({
+                        'ant': ant.id,
+                        'path': [{'q': q, 'r': r} for q, r in path]
+                    })
+
+        if moves:
+            self.client.send_moves(moves)
+
+    def recall_all_workers_to_base(self, state: GameState):
+        base_q, base_r = state.spot['q'], state.spot['r']
+        moves = list()
+
+        for ant in state.ants:
+            if ant.type == AntType.WORKER:
+                path = self.find_path(ant.q, ant.r, ANTS_PROPERTY[ant.type]['speed'], base_q, base_r, state)
+                if path:
+                    moves.append({
+                        'ant': ant.id,
+                        'path': [{'q': q, 'r': r} for q, r in path]
+                    })
+
+        if moves:
+            self.client.send_moves(moves)
+
     def scout_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
         # Ищем ближайшее тёмное пятно
         unexplored = self.find_closest_unexplored(ant.q, ant.r, state)
@@ -102,48 +134,82 @@ class Strategy:
         return self.find_path(ant.q, ant.r, *nxt, state, subject=ant)
 
     def soldier_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
-        # Ищем врага
-        if state.enemies:
-            closest_enemy = min(state.enemies,
-                                key=lambda e: PathFinder.hex_distance((ant.q, ant.r), (e.q, e.r)))
-            if PathFinder.hex_distance((ant.q, ant.r), (closest_enemy.q, closest_enemy.r)) <= 1:
-                # Если сражаемся - не надо двигаться
-                return list()
-            return self.find_path(ant.q, ant.r, closest_enemy.q, closest_enemy.r, state, subject=ant)
+        home_q, home_r = state.spot['q'], state.spot['r']
+        home_hex = (home_q, home_r)
+        ant_hex = (ant.q, ant.r)
+        radius = 7
+        spacing = 3
 
-        # Если нет врагов - патрулируем колонию
-        home_hex = state.spot
-        if (ant.q, ant.r) == (home_hex['q'], home_hex['r']):
-            neighbors = PathFinder.hex_in_area((ant.q, ant.r), big_radius=5, small_radius=2)
-            valid_neighbors = [n for n in neighbors if state.get_hex(n[0], n[1]) and
-                               state.get_hex(n[0], n[1]).type not in (HexType.STONE, HexType.ANTHILL, HexType.ACID)]
-            if valid_neighbors:
-                return [random.choice(valid_neighbors)]
-        else:
-            return self.find_path(ant.q, ant.r, home_hex['q'], home_hex['r'], state, subject=ant)
+        # Кольцевые позиции на расстоянии 7 клеток
+        ring_positions = PathFinder.hex_in_area(home_hex, small_radius=radius, big_radius=radius)
+        ring_positions = sorted(ring_positions, key=lambda h: (h[0], h[1]))[::spacing]
 
-        nxt = random.choice(PathFinder.get_neighbors(ant.q, ant.r))
-        return self.find_path(ant.q, ant.r, *nxt, state, subject=ant)
+        # Позиции, которые уже заняты
+        reserved = set()
+        for a in state.ants:
+            if a.type == AntType.SOLDIER:
+                if a.move and len(a.move) > 0:
+                    reserved.add((a.move[-1]['q'], a.move[-1]['r']))
+                elif PathFinder.hex_distance((a.q, a.r), home_hex) == radius:
+                    reserved.add((a.q, a.r))
+
+        # Свободные позиции
+        free_positions = [pos for pos in ring_positions if pos not in reserved]
+
+        if free_positions:
+            nearest_free = min(free_positions, key=lambda pos: PathFinder.hex_distance(ant_hex, pos))
+            return self.find_path(ant.q, ant.r, nearest_free[0], nearest_free[1], state, subject=ant)
+
+            # Сопровождаем рабочих, идущих от базы
+        workers_on_mission = [
+            a for a in state.ants
+            if a.type == AntType.WORKER and a.food and PathFinder.hex_distance((a.q, a.r), home_hex) > 3
+        ]
+        if workers_on_mission:
+            nearest_worker = min(workers_on_mission, key=lambda w: PathFinder.hex_distance(ant_hex, (w.q, w.r)))
+            return self.find_path(ant.q, ant.r, nearest_worker.q, nearest_worker.r, state, subject=ant)
+
+        return list() if state.get_hex(*ant_hex).type not in (HexType.ANTHILL, HexType.ACID)\
+            else random.choice(PathFinder.get_neighbors(*ant_hex))
 
     def worker_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
+        home_hex = state.spot
+        ant_hex = (ant.q, ant.r)
+
         # Если несёт еду - возвращаемся в колонию
         if ant.food:
-            home_hex = state.spot
-            if ant.hex == (home_hex['q'], home_hex['r']):
-                nxt = random.choice(PathFinder.get_neighbors(ant.q, ant.r))
-                return self.find_path(ant.q, ant.r, *nxt, state, subject=ant)  # уже в колонии
-            return self.find_path(ant.q, ant.r, home_hex['q'], home_hex['r'], state, subject=ant)
+            total_carried = sum(ant.food.values()) if isinstance(ant.food, dict) else 0
+            if total_carried >= ant.capacity / 2 or ant_hex == home_hex:
+                if ant.hex == (home_hex['q'], home_hex['r']):
+                    nxt = random.choice(PathFinder.get_neighbors(ant.q, ant.r))
+                    return self.find_path(ant.q, ant.r, *nxt, state, subject=ant)  # уже в колонии
+                return self.find_path(ant.q, ant.r, home_hex['q'], home_hex['r'], state, subject=ant)
 
-        # Видим еду - идём за ней
-        food = set(filter(lambda food: PathFinder.hex_distance(ant.hex, food.hex) <= 7 and food.type != FoodType.NECTAR, state.food))
-        if food:
-            closest_food = min(food ,key=lambda f: PathFinder.hex_distance((ant.q, ant.r), (f.q, f.r)))
-            if (ant.q, ant.r) == (closest_food.q, closest_food.r):
-                nxt = random.choice(PathFinder.get_neighbors(ant.q, ant.r))
-                return self.find_path(ant.q, ant.r, *nxt, state, subject=ant)  # уже в колонии
-            return self.find_path(ant.q, ant.r, closest_food.q, closest_food.r, state, subject=ant)
+        # Угроза: рядом враг-солдат — убегаем к ближайшему своему солдату
+        for enemy in state.enemies:
+            if enemy.type == AntType.SOLDIER and PathFinder.hex_distance(ant_hex, enemy.hex) <= 5:
+                friendly_soldiers = [a for a in state.ants if a.type == AntType.SOLDIER]
+                if friendly_soldiers:
+                    nearest_soldier = min(friendly_soldiers, key=lambda s: PathFinder.hex_distance(ant_hex, (s.q, s.r)))
+                    return self.find_path(ant.q, ant.r, nearest_soldier.q, nearest_soldier.r, state, subject=ant)
 
-        # Если нет еды - исследуем территорию в её поисках
+        # Ищем ближайший запас еды, на который ещё не идут другие рабочие
+        if state.food:
+            targeted = set()
+            for a in state.ants:
+                if a.type == AntType.WORKER and a.id != ant.id and a.move and len(a.move) > 0:
+                    last_step = a.move[-1]
+                    targeted.add((last_step['q'], last_step['r']))
+
+            available_food = [
+                f for f in state.food if f.amount > 0 and (f.q, f.r) not in targeted and state.get_hex(*f.hex).type != HexType.ANTHILL
+            ]
+
+            if available_food:
+                target_food = min(available_food, key=lambda f: PathFinder.hex_distance(ant_hex, f.hex))
+                return self.find_path(ant.q, ant.r, target_food.q, target_food.r, state, subject=ant)
+
+        # fallback — разведка
         return self.scout_strategy(ant, state)
 
     def find_closest_unexplored(self, q: int, r: int, state: GameState) -> Optional[Tuple[int, int]]:
@@ -204,8 +270,10 @@ class Strategy:
         # Выбираем ближайший подходящий гекс и строим путь
         if last:
             next_step = min(last, key=lambda h: PathFinder.hex_distance(h[0].hex, finish) + h[2])
-        else:
+        elif closed:
             next_step = min(closed.values(), key=lambda h: PathFinder.hex_distance(h[0].hex, finish) + h[2])
+        else:
+            next_step = min(opened, key=lambda h: PathFinder.hex_distance(h[0].hex, finish) + h[2])
 
         while next_step is not None:
             path.append(next_step[0].hex)
