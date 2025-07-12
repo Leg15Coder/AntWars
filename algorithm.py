@@ -68,9 +68,7 @@ class Strategy:
     def __init__(self, client: DatsPulseClient):
         self.client = client
 
-    def make_turn(self):
-        state = self.client.get_arena_state()
-
+    def make_turn(self, state: GameState):
         moves = list()
 
         for ant in state.ants:
