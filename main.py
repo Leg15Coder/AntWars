@@ -14,7 +14,8 @@ def timer(wait_seconds: float) -> None:
 if __name__ == "__main__":
     API_KEY = "b47dafaf-49a2-4db9-9c68-db6ff36f9cdd"
     # BASE_URL = "http://127.0.0.1:8000"
-    BASE_URL = "https://games-test.datsteam.dev"
+    BASE_URL = "https://games.datsteam.dev"
+    # BASE_URL = "https://games-test.datsteam.dev"
 
     client = DatsPulseClient(BASE_URL, API_KEY)
     strategy = Strategy(client)

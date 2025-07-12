@@ -99,6 +99,8 @@ class GameMemory:
         for food in state.food:
             if food.amount > 0:
                 self.food[food.hex] = food
+            elif food.hex in self.food:
+                del self.food[food.hex]
         for ant in state.ants:
             self.ants[ant.id] = ant
         for hex in state.map:

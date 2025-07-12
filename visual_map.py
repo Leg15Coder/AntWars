@@ -35,7 +35,7 @@ hex_colors = {
 }
 
 ANT_SIZE_COEF = 12
-MARGIN = 1.5
+MARGIN = 0.5
 
 
 class AsyncVisualizer:
@@ -136,8 +136,8 @@ class AsyncVisualizer:
                 linewidth=0.5
             )
             self.ax.add_patch(hex_patch)
-
-            self.ax.text(x, y - 0.3, f"{q},{r}", ha='center', va='center', fontsize=4, color='black')
+            if q % 2 == 0 and r % 2 == 0:
+                self.ax.text(x, y - 0.25, f"{q},{r}", ha='center', va='center', fontsize=3, color='black')
 
         for ant in game_state.ants:
             q, r = ant.q, ant.r
