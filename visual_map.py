@@ -3,18 +3,50 @@ import numpy as np
 from models import *
 from matplotlib.patches import RegularPolygon
 from matplotlib.font_manager import FontProperties
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from scipy.ndimage import zoom
+import matplotlib.image as mpimg
 from threading import Thread
 from queue import Queue
 import time
+import warnings
+warnings.filterwarnings("ignore")
+plt.rcParams.update({'figure.raise_window': False})
+
+
+ant_colors = {
+    AntType.WORKER: '#4169e1',  # royal blue
+    AntType.SOLDIER: '#32cd32',  # lime green
+    AntType.SCOUT: '#00bfff'  # deep sky blue
+}
+
+enemy_colors = {
+    AntType.WORKER: '#e16941',  # soft orange
+    AntType.SOLDIER: '#d2ad32',  # dirty yellow
+    AntType.SCOUT: '#ff4f33'  # royal orange
+}
+
+hex_colors = {
+    HexType.ANTHILL: '#bf00bf',  # purple
+    HexType.EMPTY: '#f0f0f0',  # white
+    HexType.DIRT: '#00ee60',  # green
+    HexType.ACID: '#e2000f',  # red
+    HexType.STONE: '#777777'  # gray
+}
+
+ANT_SIZE_COEF = 12
+MARGIN = 1.5
 
 
 class AsyncVisualizer:
     def __init__(self):
         self.queue = Queue()
+        self.hex_size = 0.5
         self.thread = Thread(target=self._visualization_thread, daemon=True)
-        self.thread.start()
-        self.emoji_font = self._find_emoji_font()
+        self.food_images = self._load_food_images()
         self.is_running = True
+
+        self.thread.start()
 
     def _visualization_thread(self):
         plt.ion()  # Включаем интерактивный режим
@@ -28,29 +60,37 @@ class AsyncVisualizer:
                 plt.pause(0.1)  # Короткая пауза для обновления графика
             time.sleep(0.1)  # Проверяем очередь 10 раз в секунду
 
-    def _find_emoji_font(self):
-        """Пытаемся найти шрифт с поддержкой эмодзи"""
+    def _load_food_images(self):
+        """Загрузка и предварительная обработка изображений"""
+        images = {}
         try:
-            # Альтернативный вариант для Windows/Linux
-            return FontProperties(fname='/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf')
-        except:
-            # Если не нашли, используем системный шрифт (эмодзи могут отображаться как квадратики)
-            return FontProperties(family='sans-serif')
+            # Загрузка с автоматическим масштабированием
+            for food_type, path in [
+                (FoodType.APPLE, 'img/apple.png'),
+                (FoodType.BREAD, 'img/bread.png'),
+                (FoodType.NECTAR, 'img/honey.png')
+            ]:
+                img = mpimg.imread(path)
+
+                # Нормализация размера (макс. 32x32 пикселя)
+                scale_factor = min(32 / img.shape[0], 32 / img.shape[1])
+                new_height = int(img.shape[0] * scale_factor)
+                new_width = int(img.shape[1] * scale_factor)
+
+                # Масштабирование с интерполяцией
+                if img.shape[0] > 32 or img.shape[1] > 32:
+                    img = zoom(img, (scale_factor, scale_factor, 1))
+
+                images[food_type] = img
+        except Exception as e:
+            print(f"Ошибка загрузки изображений: {e}")
+        return images
 
     def _draw_map(self, game_state):
         """Функция отрисовки карты (аналогичная предыдущей реализации)"""
         self.ax.clear()
-        self.ax.set_title(f"DatsPulse Map - Turn {game_state.turn_no}")
+        self.ax.set_title(f"Ход {game_state.turn_no}, очков: {game_state.score}")
         self.ax.set_facecolor('lightgray')
-
-        # Цвета для разных типов гексов
-        hex_colors = {
-            HexType.ANTHILL: '#68006C',
-            HexType.EMPTY: '#f0f0f0',
-            HexType.DIRT: '#007730',
-            HexType.ACID: '#A2000C',
-            HexType.STONE: '#333333'
-        }
 
         # Собираем координаты для определения границ
         all_q = [hex.q for hex in game_state.map]
@@ -72,16 +112,7 @@ class AsyncVisualizer:
             )
             self.ax.add_patch(hex_patch)
 
-            # Подписываем только основные координаты для уменьшения нагромождения
-            if abs(q) <= 2 or abs(r) <= 2 or q == 0 or r == 0:
-                self.ax.text(x, y, f"{q},{r}", ha='center', va='center', fontsize=6, color='#555555')
-
-        # Рисуем муравьев
-        ant_colors = {
-            AntType.WORKER: '#4169e1',  # royal blue
-            AntType.SOLDIER: '#32cd32',  # lime green
-            AntType.SCOUT: '#00bfff'  # deep sky blue
-        }
+            self.ax.text(x, y - 0.3, f"{q},{r}", ha='center', va='center', fontsize=4, color='black')
 
         for ant in game_state.ants:
             q, r = ant.q, ant.r
@@ -98,29 +129,44 @@ class AsyncVisualizer:
                 y -= 0.2
 
             color = ant_colors.get(ant.type, '#000000')
-            self.ax.plot(x, y, marker='o', markersize=8, color=color, markeredgecolor='black', markeredgewidth=0.5)
+            self.ax.plot(x, y, marker='o', markersize=self.hex_size*ANT_SIZE_COEF,
+                         color=color, markeredgecolor='black', markeredgewidth=0.5)
 
-        # Рисуем ресурсы
-        food_symbols = {
-            FoodType.APPLE: '🍎',
-            FoodType.BREAD: '🍞',
-            FoodType.NECTAR: '🍯'
-        }
+        for ant in game_state.enemies:
+            q, r = ant.q, ant.r
+            x = q * 0.866
+            y = r + q * 0.5
+
+            if ant.type == AntType.SCOUT:
+                x -= 0.2
+                y -= 0.2
+            elif ant.type == AntType.WORKER:
+                y += 0.21
+            else:
+                x += 0.2
+                y -= 0.2
+
+            color = enemy_colors.get(ant.type, '#000000')
+            self.ax.plot(x, y, marker='o', markersize=self.hex_size*ANT_SIZE_COEF,
+                         color=color, markeredgecolor='black', markeredgewidth=0.5)
 
         for food in game_state.food:
             q, r = food.q, food.r
             x = q * 0.866
             y = r + q * 0.5
-            symbol = food_symbols.get(food.type, '?')
-            self.ax.text(x, y - 0.25, f"{symbol}{food.amount}",
-                    ha='center', va='center', fontsize=8)
+
+            if food.type in self.food_images:
+                imagebox = OffsetImage(self.food_images[food.type], zoom=self.hex_size * 0.9)
+                ab = AnnotationBbox(imagebox, (x, y), frameon=False)
+                self.ax.add_artist(ab)
+                self.ax.text(x + 0.14, y + 0.21, f"{food.amount}",
+                        ha='center', va='center', fontsize=7, color='black')
 
         # Устанавливаем границы с запасом
-        margin = 1.5
-        min_x = min(q * 0.866 for q in all_q) - margin
-        max_x = max(q * 0.866 for q in all_q) + margin
-        min_y = min(r + q * 0.5 for q, r in zip(all_q, all_r)) - margin
-        max_y = max(r + q * 0.5 for q, r in zip(all_q, all_r)) + margin
+        min_x = min(q * 0.866 for q in all_q) - MARGIN
+        max_x = max(q * 0.866 for q in all_q) + MARGIN
+        min_y = min(r + q * 0.5 for q, r in zip(all_q, all_r)) - MARGIN
+        max_y = max(r + q * 0.5 for q, r in zip(all_q, all_r)) + MARGIN
 
         self.ax.set_xlim(min_x, max_x)
         self.ax.set_ylim(min_y, max_y)
