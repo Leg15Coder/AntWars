@@ -163,13 +163,14 @@ class AsyncVisualizer:
                         ha='center', va='center', fontsize=7, color='black')
 
         # Устанавливаем границы с запасом
-        min_x = min(q * 0.866 for q in all_q) - MARGIN
-        max_x = max(q * 0.866 for q in all_q) + MARGIN
-        min_y = min(r + q * 0.5 for q, r in zip(all_q, all_r)) - MARGIN
-        max_y = max(r + q * 0.5 for q, r in zip(all_q, all_r)) + MARGIN
+        if all_q:
+            min_x = min(q * 0.866 for q in all_q) - MARGIN
+            max_x = max(q * 0.866 for q in all_q) + MARGIN
+            min_y = min(r + q * 0.5 for q, r in zip(all_q, all_r)) - MARGIN
+            max_y = max(r + q * 0.5 for q, r in zip(all_q, all_r)) + MARGIN
 
-        self.ax.set_xlim(min_x, max_x)
-        self.ax.set_ylim(min_y, max_y)
+            self.ax.set_xlim(min_x, max_x)
+            self.ax.set_ylim(min_y, max_y)
         self.ax.axis('off')
 
         plt.draw()
