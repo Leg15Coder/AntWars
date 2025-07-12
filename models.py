@@ -89,7 +89,7 @@ class Ant:
         self.r = r
         self.hex = (self.q, self.r)
         self.health = health
-        self.food = food
+        self.food = food["amount"] if food and "amount" in food else None
         self.last_move = last_move
         self.move = move
         self.last_attack = last_attack

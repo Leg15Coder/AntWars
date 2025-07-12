@@ -48,7 +48,7 @@ class PathFinder:
         hexes = []
 
         for q in range(-big_radius, big_radius + 1):
-            for r in range(max(-big_radius, -q - big_radius), min(big_radius, -q + big_radius) + 1):
+            for r in range(max(-big_radius, - big_radius), min(big_radius, + big_radius) + 1):
                 distance = PathFinder.hex_distance((0, 0), (q, r))
 
                 if (distance > small_radius or (not is_small_strict and distance == small_radius)) and \
@@ -60,8 +60,8 @@ class PathFinder:
         return hexes
 
     @staticmethod
-    def heuristic(current: Hex, target: Hex) -> float:
-        return 0
+    def heuristic(current: Hex, target: Tuple[int, int]) -> float:
+        return PathFinder.hex_distance(current.hex, target) + (2 if current.type == HexType.ACID else 0)
 
 
 class Strategy:
@@ -82,6 +82,7 @@ class Strategy:
                 path = self.worker_strategy(ant, state)
 
             if path:
+                path.pop(0)
                 moves.append({
                     'ant': ant.id,
                     'path': [{'q': q, 'r': r} for q, r in path]
@@ -94,8 +95,11 @@ class Strategy:
         # Ищем ближайшее тёмное пятно
         unexplored = self.find_closest_unexplored(ant.q, ant.r, state)
         if unexplored:
-            return self.find_path(ant.q, ant.r, unexplored[0], unexplored[1], state, subject=ant)
-        return list()
+            path = self.find_path(ant.q, ant.r, unexplored[0], unexplored[1], state, subject=ant)
+            path.pop()
+            return path
+        nxt = random.choice(PathFinder.get_neighbors(ant.q, ant.r))
+        return self.find_path(ant.q, ant.r, *nxt, state, subject=ant)
 
     def soldier_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
         # Ищем врага
@@ -110,7 +114,7 @@ class Strategy:
         # Если нет врагов - патрулируем колонию
         home_hex = state.spot
         if (ant.q, ant.r) == (home_hex['q'], home_hex['r']):
-            neighbors = PathFinder.hex_in_area((ant.q, ant.r), big_radius=3)
+            neighbors = PathFinder.hex_in_area((ant.q, ant.r), big_radius=5, small_radius=2)
             valid_neighbors = [n for n in neighbors if state.get_hex(n[0], n[1]) and
                                state.get_hex(n[0], n[1]).type not in (HexType.STONE, HexType.ANTHILL, HexType.ACID)]
             if valid_neighbors:
@@ -118,22 +122,25 @@ class Strategy:
         else:
             return self.find_path(ant.q, ant.r, home_hex['q'], home_hex['r'], state, subject=ant)
 
-        return list()
+        nxt = random.choice(PathFinder.get_neighbors(ant.q, ant.r))
+        return self.find_path(ant.q, ant.r, *nxt, state, subject=ant)
 
     def worker_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
         # Если несёт еду - возвращаемся в колонию
         if ant.food:
             home_hex = state.spot
             if ant.hex == (home_hex['q'], home_hex['r']):
-                return list()  # уже в колонии
+                nxt = random.choice(PathFinder.get_neighbors(ant.q, ant.r))
+                return self.find_path(ant.q, ant.r, *nxt, state, subject=ant)  # уже в колонии
             return self.find_path(ant.q, ant.r, home_hex['q'], home_hex['r'], state, subject=ant)
 
         # Видим еду - идём за ней
-        if state.food:
-            closest_food = min(filter(lambda food: PathFinder.hex_distance(ant.hex, food.hex) < 7, state.food),
-                               key=lambda f: PathFinder.hex_distance((ant.q, ant.r), (f.q, f.r)))
+        food = set(filter(lambda food: PathFinder.hex_distance(ant.hex, food.hex) <= 7 and food.type != FoodType.NECTAR, state.food))
+        if food:
+            closest_food = min(food ,key=lambda f: PathFinder.hex_distance((ant.q, ant.r), (f.q, f.r)))
             if (ant.q, ant.r) == (closest_food.q, closest_food.r):
-                return list()  # уже в колонии
+                nxt = random.choice(PathFinder.get_neighbors(ant.q, ant.r))
+                return self.find_path(ant.q, ant.r, *nxt, state, subject=ant)  # уже в колонии
             return self.find_path(ant.q, ant.r, closest_food.q, closest_food.r, state, subject=ant)
 
         # Если нет еды - исследуем территорию в её поисках
@@ -160,8 +167,7 @@ class Strategy:
         path = list()
         current = state.get_hex(start_q, start_r)
         finish = (target_q, target_r)
-        target = state.get_hex(target_q, target_r)
-        opened = {(current, ant.spped, PathFinder.heuristic(current, target), None)}  # Объект типа < Hex, max_length, Heuristic, previousHex >
+        opened = {(current, subject.speed, PathFinder.heuristic(current, finish), None)}  # Объект типа < Hex, max_length, Heuristic, previousHex >
         closed = dict()
         last = set()
         running = True
@@ -171,7 +177,7 @@ class Strategy:
                 break  # Нет пути
 
             current, speed, _, __ = min(opened, key=lambda h: PathFinder.hex_distance(h[0].hex, finish) + h[2])
-            opened.remove((current, speed))
+            opened.remove((current, speed, _, __))
             closed[current] = (current, speed, _, __)
             # Все возможные клетки для передвижения
             neighbors = PathFinder.get_neighbors(*current.hex)
@@ -179,7 +185,7 @@ class Strategy:
             # Удаляем невалидные гексы
             for nq, nr in neighbors:
                 hex = state.get_hex(nq, nr)
-                if hex and hex.type not in (HexType.STONE, HexType.ANTHILL):
+                if hex and hex.type not in (HexType.STONE, ):
                     # Проверяем занят ли гекс
                     occupied = hex in closed
                     if subject is not None and not occupied:
@@ -193,7 +199,7 @@ class Strategy:
                         if n_speed == 0:
                             running = False
                         last.add((state.get_hex(nq, nr), n_speed, 0, current))
-                        opened.add((state.get_hex(nq, nr), n_speed, PathFinder.heuristic(hex, target), current))
+                        opened.add((state.get_hex(nq, nr), n_speed, PathFinder.heuristic(hex, finish), current))
 
         # Выбираем ближайший подходящий гекс и строим путь
         if last:
@@ -202,8 +208,8 @@ class Strategy:
             next_step = min(closed.values(), key=lambda h: PathFinder.hex_distance(h[0].hex, finish) + h[2])
 
         while next_step is not None:
-            path.append(next_step[0])
-            next_step = closed.get(next_step[0])
+            path.append(next_step[0].hex)
+            next_step = closed.get(next_step[3])
         path.reverse()
 
         return path
