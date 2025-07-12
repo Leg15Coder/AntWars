@@ -41,7 +41,7 @@ if __name__ == "__main__":
         if time_to_wait > 0:
             time.sleep(time_to_wait)
 
-        with open(f'logs/log-{datetime.now().strftime('%Y-%m-%d_%H-%M')}.txt', 'a', encoding='utf-8') as file:
+        with open(f'logs/log-{datetime.now().strftime("%Y-%m-%d_%H-%M")}.txt', 'a', encoding='utf-8') as file:
             file.write(str(client.get_logs()) + '\n')
     print(ex)
     if "no active game" in str(ex):

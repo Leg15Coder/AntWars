@@ -261,7 +261,7 @@ class Strategy:
         path = list()
         current = state.get_hex(start_q, start_r)
         finish = (target_q, target_r)
-        opened = {(current, subject.speed, PathFinder.heuristic(current, finish), None)}  # Объект типа < Hex, max_length, Heuristic, previousHex >
+        opened = {(current, ANTS_PROPERTY[subject.type]['speed'], PathFinder.heuristic(current, finish), None)}  # Объект типа < Hex, max_length, Heuristic, previousHex >
         closed = dict()
         last = set()
         running = True

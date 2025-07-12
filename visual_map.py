@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import matplotlib.pyplot as plt
 import numpy as np
 from models import *
@@ -52,7 +54,6 @@ class AsyncVisualizer:
         plt.ion()  # Включаем интерактивный режим
         self.fig, self.ax = plt.subplots(figsize=(10, 10))
         plt.title("Map")
-        self.set_figure_position()
         self.ax.set_aspect('equal')
 
         while self.is_running:
@@ -238,7 +239,7 @@ if __name__ == '__main__':
                 print(f"Ожидайте {time_to_wait:.1f} сек перед следующим ходом...")
                 time.sleep(time_to_wait)
 
-            with open(f'logs/log-{datetime.now().strftime('%Y-%m-%d_%H-%M')}.txt', 'a', encoding='utf-8') as file:
+            with open(f'logs/log-{datetime.now().strftime("%Y-%m-%d_%H-%M")}.txt', 'a', encoding='utf-8') as file:
                 file.write(str(client.get_logs()) + '\n')
     except Exception as ex:
         print(ex)
