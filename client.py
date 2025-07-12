@@ -32,10 +32,12 @@ class DatsPulseClient:
         Отправляем приказы муравьям
         moves: Список словарей с 'ant' (ID) и 'path' (список вида {'q': x, 'r': y})
         """
+        # print(moves)
         self._rate_limit()
         payload = {'moves': moves}
         response = self.session.post(f'{self.base_url}/api/move', json=payload)
         if response.status_code == 200:
+            # print(response.json())
             return True
         else:
             print(f"Ошибка отправки ходов: {response.status_code} - {response.text}")
