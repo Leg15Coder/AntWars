@@ -22,6 +22,19 @@ class FoodType(Enum):
     NECTAR = 3
 
 
+class AntRole:
+    SIMPLE = 'SIMPLE'  # Роль не назначена
+
+    DEFENDER = 'DEFENDER'  # Охраняет базу
+    ESCORT = 'ESCORT'  # Сопровождает рабочих
+    ARMY = 'ARMY'  # Готов к нападению
+
+    WORKER = 'WORKER'  # Собирает еду
+    HELPER = 'HELPER'  # Сопровождает нападение
+
+    SCOUT = 'SCOUT'  # Исследует территорию
+
+
 ANTS_PROPERTY = {
     AntType.SCOUT: {
         'max_health': 80,
