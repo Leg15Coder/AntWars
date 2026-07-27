@@ -4,17 +4,28 @@ import time
 from enum import Enum
 from typing import Dict, List, Tuple
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
 LOGS_PATH = os.getenv("LOGS_PATH")
+log_dir = os.path.join(LOGS_PATH or "/tmp", "server")
+os.makedirs(log_dir, exist_ok=True)
 
 
 # --- Настройки таймеров (в секундах) ---
-LOBBY_DURATION = 15.0    # Длительность лобби для сбора игроков (по ТЗ 300.0 сек / 5 мин)
-ROUND_DURATION = 600.0   # Длительность раунда (10 минут)
-BREAK_DURATION = 60.0    # Технический перерыв (1 минута)
-TURN_DURATION = 2.0      # Длительность одного хода (2 секунды)
+LOBBY_DURATION = 64.0    # Длительность лобби для сбора игроков
+ROUND_DURATION = 600.0   # Длительность раунда
+BREAK_DURATION = 30.0    # Технический перерыв
+TURN_DURATION = 2.0      # Длительность одного хода
+MAX_PLAYERS = 32         # Максимальное количество игроков в раунде
+FOOD_SPAWN_PROBABILITY = 0.33
+MIN_SPAWN_FOOD_COUNT = 8
+MAX_SPAWN_FOOD_COUNT = 32
+WORKER_ANT_SPAWN_PROBABILITY = 0.60
+SOLDIER_ANT_SPAWN_PROBABILITY = 0.30
+SCOUT_ANT_SPAWN_PROBABILITY = 0.10
+MAX_ANTS = 128
 
 
 class GamePhase(Enum):
@@ -64,33 +75,23 @@ class FastServerEngine:
         self.food_spots: Dict[Tuple[int, int], dict] = {}
         self.pending_moves: Dict[str, List[dict]] = {}
         self.logs: Dict[str, List[str]] = {}
+        self.history = {}
 
     def reset(self, team_tokens: List[str]):
+        log_filename = os.path.join(log_dir, f"turns_history_at_{int(time.time())}.json")
+        with open(log_filename, 'w', encoding='utf-8') as f:
+            json.dump(self.history, f, ensure_ascii=False, indent=4)
+        self.history.clear()
+
         self.turn_no = 1
         self.teams.clear()
         self.hex_map.clear()
         self.ants.clear()
         self.food_spots.clear()
         self.pending_moves.clear()
+        self.logs.clear()
+        self.generate_map()
 
-        with open(rf'{LOGS_PATH}\server\log_at_{time.time()}.txt', 'w') as f:
-            f.write(str(self.logs))
-            self.logs.clear()
-
-        # Генерация карты
-        for q in range(-self.map_radius, self.map_radius + 1):
-            for r in range(max(-self.map_radius, -q - self.map_radius), min(self.map_radius, -q + self.map_radius) + 1):
-                hex_type, cost = 2, 1
-                val = random.random()
-                if val < 0.08:
-                    hex_type, cost = 3, 2  # Грязь
-                elif val < 0.12:
-                    hex_type, cost = 4, 1  # Кислота
-                elif val < 0.16 and (abs(q) > 2 or abs(r) > 2):
-                    hex_type, cost = 5, 999  # Камень
-                self.hex_map[(q, r)] = {"q": q, "r": r, "type": hex_type, "cost": cost}
-
-        # Спавн муравейников
         dist = max(4, self.map_radius - 3)
         for idx, token in enumerate(team_tokens):
             angle = (2 * math.pi * idx) / len(team_tokens)
@@ -115,6 +116,19 @@ class FastServerEngine:
         for _ in range(len(team_tokens) * 3):
             self.spawn_food()
 
+    def generate_map(self):
+        for q in range(-self.map_radius, self.map_radius + 1):
+            for r in range(max(-self.map_radius, -q - self.map_radius), min(self.map_radius, -q + self.map_radius) + 1):
+                hex_type, cost = 2, 1
+                val = random.random()
+                if val < 0.08:
+                    hex_type, cost = 3, 2      # Грязь
+                elif val < 0.12:
+                    hex_type, cost = 4, 1      # Кислота
+                elif val < 0.16 and (abs(q) > 2 or abs(r) > 2):
+                    hex_type, cost = 5, 99999  # Камень
+                self.hex_map[(q, r)] = {"q": q, "r": r, "type": hex_type, "cost": cost}
+
     def spawn_ant(self, token: str, ant_type: int) -> bool:
         team = self.teams.get(token)
         if not team:
@@ -123,7 +137,7 @@ class FastServerEngine:
         main_q, main_r = team["spot"]["q"], team["spot"]["r"]
         team_ants = [a for a in self.ants.values() if a["team"] == token and a["health"] > 0]
 
-        if len(team_ants) >= 100:
+        if len(team_ants) >= MAX_ANTS:
             return False
 
         # Проверка лимита: если на основном гексе уже есть муравей того же типа
@@ -146,7 +160,7 @@ class FastServerEngine:
             "move": [],
             "lastAttack": None,
             "lastEnemyAnt": None,
-            "visited_this_turn": [(main_q, main_r)]
+            "visited": [(main_q, main_r)]
         }
         self.add_log(token, f"Муравей {ant_id} появился в муравейнике.")
         return True
@@ -165,7 +179,7 @@ class FastServerEngine:
         for team in self.teams.values():
             for h in team["home"]:
                 hq, hr = h["q"], h["r"]
-                for ant in list(self.ants.values()):
+                for ant in self.ants.values():
                     if ant["team"] != team["token"] and ant["health"] > 0:
                         if hex_distance(hq, hr, ant["q"], ant["r"]) <= 2:
                             ant["health"] -= 20
@@ -220,7 +234,7 @@ class FastServerEngine:
             team_ants = [a for a in self.ants.values() if a["team"] == token and a["health"] > 0]
 
             for ant in team_ants:
-                ant["visited_this_turn"] = [(ant["q"], ant["r"])]
+                ant["visited"] = [(ant["q"], ant["r"])]
                 path = moves_dict.get(ant["id"], [])
                 max_speed = UNIT_PROPERTIES[ant["type"]]["speed"]
 
@@ -253,7 +267,7 @@ class FastServerEngine:
                     spent_op += op_cost
                     cq, cr = tq, tr
                     executed_path.append({"q": cq, "r": cr})
-                    ant["visited_this_turn"].append((cq, cr))
+                    ant["visited"].append((cq, cr))
 
                 ant["q"], ant["r"] = cq, cr
                 ant["lastMove"] = executed_path
@@ -290,12 +304,21 @@ class FastServerEngine:
         # 5. Спавн новых юнитов
         for token in self.teams.keys():
             rval = random.random()
-            stype = 0 if rval < 0.60 else (1 if rval < 0.90 else 2)
+            if rval < WORKER_ANT_SPAWN_PROBABILITY:
+                stype = 0
+            else:
+                total_prob_sold = WORKER_ANT_SPAWN_PROBABILITY + SCOUT_ANT_SPAWN_PROBABILITY
+                stype = 1 if rval < total_prob_sold else 2
             self.spawn_ant(token, stype)
 
         # 6. Спавн новых ресурсов
-        if random.random() < 0.40:
+        if random.random() < FOOD_SPAWN_PROBABILITY:
             self.spawn_random_food()
+
+        for token in self.teams.keys():
+            if token not in self.history:
+                self.history[token] = []
+            self.history[token].append(self.get_state(token, True))
 
     def spawn_random_food(self):
         empty = [
@@ -304,7 +327,7 @@ class FastServerEngine:
         ]
         if empty:
             p = random.choice(empty)
-            self.food_spots[p] = {"q": p[0], "r": p[1], "type": random.choice([1, 2, 3]), "amount": random.randint(10, 30)}
+            self.food_spots[p] = {"q": p[0], "r": p[1], "type": random.choice([1, 2, 3]), "amount": random.randint(MIN_SPAWN_FOOD_COUNT, MAX_SPAWN_FOOD_COUNT)}
 
     def clean_dead_ants(self):
         dead_ids = [aid for aid, ant in self.ants.items() if ant["health"] <= 0]
@@ -317,10 +340,16 @@ class FastServerEngine:
             del self.ants[aid]
 
     def add_log(self, token: str, msg: str):
+        msg = f"[Ход #{self.turn_no}] {msg}"
         if token in self.logs:
-            self.logs[token].append(f"[Ход #{self.turn_no}] {msg}")
+            self.logs[token].append(msg)
+        else:
+            self.logs[token] = [msg]
 
-    def get_state(self, token: str) -> dict:
+    def get_state(self, token: str, to_calculate: bool = False) -> dict:
+        if not to_calculate and token in self.history and self.history[token]:
+            return self.history[token][-1]
+
         team = self.teams[token]
         visible_coords = set()
         visible_coords.update(get_hexes_in_radius(team["spot"]["q"], team["spot"]["r"], 2))

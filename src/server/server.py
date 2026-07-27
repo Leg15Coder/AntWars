@@ -1,4 +1,5 @@
 import threading
+import json
 from typing import Set, override
 from flask import Flask, request, jsonify
 from server_engine import *
@@ -35,7 +36,7 @@ class MatchServer(FastServerEngine):
         with self.lock:
             rem_lobby = int(self.get_phase_remaining_time())
 
-            if self.phase == GamePhase.LOBBY:
+            if self.phase == GamePhase.LOBBY and len(self.registered_tokens) < MAX_PLAYERS:
                 self.registered_tokens.add(token)
                 if token not in self.logs:
                     self.logs[token] = []
@@ -50,6 +51,18 @@ class MatchServer(FastServerEngine):
 
     def start_round(self):
         """Запуск раунда совместной игры."""
+        if self.history:
+            log_filename = os.path.join(log_dir, f"turns_history_at_{int(time.time())}.txt")
+            with open(log_filename, 'w', encoding='utf-8') as f:
+                json.dump(self.history, f, ensure_ascii=False, indent=4)
+            self.history.clear()
+            self.logs.clear()
+
+        num_teams = len(self.registered_tokens)
+        if num_teams == 0:
+            self.start_lobby(True)
+            return
+
         self.phase = GamePhase.RUNNING
         self.phase_start_time = time.time()
         self.turn_no = 1
@@ -60,17 +73,10 @@ class MatchServer(FastServerEngine):
         self.pending_moves.clear()
         self.teams.clear()
 
-        num_teams = len(self.registered_tokens)
         print(f"\n=== СТАРТ РАУНДА! Игроков: {num_teams} ===")
 
-        if num_teams == 0:
-            return
-
-        # Масштабирование карты под количество игроков
         map_radius = max(10, 6 + num_teams * 3)
         self.generate_hex_map(map_radius)
-
-        # Равноудалённый спавн муравейников на общей карте
         tokens = list(self.registered_tokens)
         dist = max(4, map_radius - 3)
 
@@ -83,7 +89,6 @@ class MatchServer(FastServerEngine):
             neighbors = get_hex_neighbors(cq, cr)
             home_hexes = [spot, {"q": neighbors[0][0], "r": neighbors[0][1]}, {"q": neighbors[1][0], "r": neighbors[1][1]}]
 
-            # Делаем гексы муравейниками
             for h in home_hexes:
                 self.hex_map[(h["q"], h["r"])] = {"q": h["q"], "r": h["r"], "type": 1, "cost": 1}
 
@@ -95,11 +100,8 @@ class MatchServer(FastServerEngine):
                 "nectar": {f"{h['q']},{h['r']}": 0 for h in home_hexes}
             }
             self.logs[token].append(f"Раунд начался! Ваш муравейник на ({cq}, {cr}).")
-
-            # Спавн стартового рабочего
             self.spawn_ant(token, ant_type=0)
 
-        # Начальный спавн ресурсов
         for _ in range(num_teams * 4):
             self.spawn_random_food()
 
@@ -133,12 +135,14 @@ class MatchServer(FastServerEngine):
         self.phase_start_time = time.time()
         print("\n=== РАУНД ЗАВЕРШЁН! ПЕРЕРЫВ ===")
 
-    def start_lobby(self):
+    def start_lobby(self, is_continued: bool = False):
         """Переход к новому лобби."""
         self.phase = GamePhase.LOBBY
         self.phase_start_time = time.time()
-        self.registered_tokens.clear()
-        print("\n=== ЛОББИ ОТКРЫТО. ОЖИДАНИЕ ИГРОКОВ ===")
+
+        if not is_continued:
+            self.registered_tokens.clear()
+            print("\n=== ЛОББИ ОТКРЫТО. ОЖИДАНИЕ ИГРОКОВ ===")
 
     def get_arena_state(self, token: str) -> dict:
         with self.lock:
@@ -159,7 +163,7 @@ class MatchServer(FastServerEngine):
             for ant in self.ants.values():
                 if ant["team"] == token and ant["health"] > 0:
                     v_range = UNIT_PROPERTIES[ant["type"]]["view_range"]
-                    for vq, vr in ant.get("visited_this_turn", [(ant["q"], ant["r"])]):
+                    for vq, vr in ant.get("visited", [(ant["q"], ant["r"])]):
                         visible_coords.update(get_hexes_in_radius(vq, vr, v_range))
 
             my_ants = [
