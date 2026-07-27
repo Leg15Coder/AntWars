@@ -1,9 +1,7 @@
 import requests
 import time
 from typing import *
-from gamestate import *
-
-from gamestate import GameState
+from src.client.gamestate import *
 
 
 class DatsPulseClient:

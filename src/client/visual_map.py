@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from models import *
+from src.client.models import *
 from matplotlib.patches import RegularPolygon
 from matplotlib.font_manager import FontProperties
 from threading import Thread
@@ -9,12 +9,13 @@ import time
 
 
 class AsyncVisualizer:
-    def __init__(self):
+    def __init__(self, title: str ='GAME'):
         self.queue = Queue()
         self.thread = Thread(target=self._visualization_thread, daemon=True)
         self.thread.start()
         self.emoji_font = self._find_emoji_font()
         self.is_running = True
+        self.title = title
 
     def _visualization_thread(self):
         plt.ion()  # Включаем интерактивный режим
@@ -40,7 +41,7 @@ class AsyncVisualizer:
     def _draw_map(self, game_state):
         """Функция отрисовки карты (аналогичная предыдущей реализации)"""
         self.ax.clear()
-        self.ax.set_title(f"DatsPulse Map - Turn {game_state.turn_no}")
+        self.ax.set_title(f"{self.title} - Turn {game_state.turn_no}")
         self.ax.set_facecolor('lightgray')
 
         # Цвета для разных типов гексов

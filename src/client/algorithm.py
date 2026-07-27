@@ -1,9 +1,7 @@
 from typing import *
-
 import random
-
-from client import *
-from gamestate import *
+from src.client.client import *
+from src.client.gamestate import *
 
 
 class PathFinder:
@@ -67,7 +65,7 @@ class Strategy:
     def make_turn(self):
         state = self.client.get_arena_state()
 
-        moves = list()
+        moves = []
 
         for ant in state.ants:
             if ant.type == AntType.SCOUT:
@@ -91,7 +89,7 @@ class Strategy:
         unexplored = self.find_closest_unexplored(ant.q, ant.r, state)
         if unexplored:
             return self.find_path(ant.q, ant.r, ant.speed, unexplored[0], unexplored[1], state)
-        return list()
+        return []
 
     def soldier_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
         # Ищем врага
@@ -114,29 +112,39 @@ class Strategy:
         else:
             return self.find_path(ant.q, ant.r, ant.speed, home_hex['q'], home_hex['r'], state)
 
-        return list()
+        return []
 
     def worker_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
         # Если несёт еду - возвращаемся в колонию
         if ant.food:
             home_hex = state.spot
             if ant.hex == (home_hex['q'], home_hex['r']):
-                return list()  # уже в колонии
+                return []  # уже в колонии
             return self.find_path(ant.q, ant.r, ant.speed, home_hex['q'], home_hex['r'], state)
 
         # Видим еду - идём за ней
+        """
         if state.food:
-            closest_food = min(filter(lambda food: PathFinder.hex_distance(ant.hex, food.hex) < 7, state.food),
-                               key=lambda f: PathFinder.hex_distance((ant.q, ant.r), (f.q, f.r)))
+            closest_food = min(filter(lambda food: PathFinder.hex_distance(ant.hex, food.hex) < 7, state.food), key=lambda f: PathFinder.hex_distance((ant.q, ant.r), (f.q, f.r)))
             if (ant.q, ant.r) == (closest_food.q, closest_food.r):
                 return list()  # уже в колонии
             return self.find_path(ant.q, ant.r, ant.speed, closest_food.q, closest_food.r, state)
+        """
+
+        if state.food:
+            # Отбираем еду в радиусе 7 гексов
+            nearby_food = [f for f in state.food if PathFinder.hex_distance(ant.hex, f.hex) < 7]
+            if nearby_food:
+                closest_food = min(nearby_food, key=lambda f: PathFinder.hex_distance((ant.q, ant.r), (f.q, f.r)))
+                if (ant.q, ant.r) == (closest_food.q, closest_food.r):
+                    return []  # уже на клетке с едой
+                return self.find_path(ant.q, ant.r, ant.speed, closest_food.q, closest_food.r, state)
 
         # Если нет еды - исследуем территорию в её поисках
         return self.scout_strategy(ant, state)
 
     def find_closest_unexplored(self, q: int, r: int, state: GameState) -> Optional[Tuple[int, int]]:
-        edge_hexes = list()
+        edge_hexes = []
         for hex in state.map:
             neighbors = PathFinder.get_neighbors(hex.q, hex.r)
             for nq, nr in neighbors:

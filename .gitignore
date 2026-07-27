@@ -163,3 +163,4 @@ cython_debug/
 # Project
 logs/
 *tmp*
+/logs/

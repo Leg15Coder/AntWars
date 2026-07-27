@@ -1,4 +1,4 @@
-from models import *
+from src.client.models import *
 from typing import *
 
 

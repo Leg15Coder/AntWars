@@ -78,7 +78,7 @@ class Ant:
     def __init__(self, ant_id: str, ant_type: AntType, q: int, r: int, health: int,
                  food: Optional[Dict] = None, last_move: Optional[List[Dict]] = None,
                  move: Optional[List[Dict]] = None, last_attack: Optional[Dict] = None,
-                 last_enemy_ant: Optional[str] = None):
+                 last_enemy_ant: Optional[str] = None, speed: Optional[int] = None):
         self.id = ant_id
         self.type = ant_type
 
@@ -92,6 +92,7 @@ class Ant:
         self.food = food
         self.last_move = last_move
         self.move = move
+        self.speed = speed
         self.last_attack = last_attack
         self.last_enemy_ant = last_enemy_ant
 
