@@ -4,13 +4,14 @@ from typing import *
 from src.client.gamestate import *
 
 
-class DatsPulseClient:
+class AntWarsClient:
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
         self.session = requests.Session()
         self.session.headers.update({'X-Auth-Token': f'{self.api_key}'})
         self.last_request_time = 0
+        self.known_map: Dict[Tuple[int, int], Hex] = {}
 
     def _rate_limit(self):
         elapsed = time.time() - self.last_request_time
@@ -23,7 +24,9 @@ class DatsPulseClient:
         self._rate_limit()
         response = self.session.get(f'{self.base_url}/api/arena')
         response.raise_for_status()
-        return GameState(response.json())
+        state = GameState(response.json(), prev_map=self.known_map)
+        self.known_map = state.known_map
+        return state
 
     def send_moves(self, moves: List[Dict]) -> bool:
         """

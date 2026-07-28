@@ -51,12 +51,13 @@ ANTS_PROPERTY = {
 
 
 class Hex:
-    def __init__(self, q: int, r: int, hex_type: HexType, cost: int):
+    def __init__(self, q: int, r: int, hex_type: HexType, cost: int, is_visible: bool = True):
         self.q = q
         self.r = r
         self.hex = (self.q, self.r)
         self.type = hex_type
         self.cost = cost
+        self.is_visible = is_visible
 
     def __str__(self):
         return f"Hex({self.q}, {self.r}, {self.type.name}, cost={self.cost})"
@@ -92,9 +93,11 @@ class Ant:
         self.food = food
         self.last_move = last_move
         self.move = move
-        self.speed = speed
         self.last_attack = last_attack
         self.last_enemy_ant = last_enemy_ant
+
+        if speed is not None:
+            self.speed = speed
 
     def __str__(self):
         return f"Ant({self.id}, {self.type.name}, pos=({self.q}, {self.r}), health={self.health})"

@@ -3,7 +3,7 @@ from typing import *
 
 
 class GameState:
-    def __init__(self, data: Dict):
+    def __init__(self, data: Dict, prev_map: Optional[Dict[Tuple[int, int], Hex]] = None):
         self.ants = [Ant(ant['id'], AntType(ant['type']), ant['q'], ant['r'], ant['health'],
                          ant.get('food'), ant.get('lastMove'), ant.get('move'),
                          ant.get('lastAttack'), ant.get('lastEnemyAnt'))
@@ -18,8 +18,17 @@ class GameState:
 
         self.home = [{'q': h['q'], 'r': h['r']} for h in data.get('home', [])]
 
-        self.map = [Hex(hex['q'], hex['r'], HexType(hex['type']), hex['cost'])
-                    for hex in data.get('map', [])]
+        self.known_map = dict(prev_map) if prev_map else {}
+
+        for h in self.known_map.values():
+            h.is_visible = False
+
+        for hex_data in data.get('map', []):
+            q, r = hex_data['q'], hex_data['r']
+            h = Hex(q, r, HexType(hex_data['type']), hex_data['cost'], is_visible=True)
+            self.known_map[(q, r)] = h
+
+        self.map = list(self.known_map.values())
 
         self.spot = data.get('spot', {})
         self.next_turn_in = data.get('nextTurnIn', 0)

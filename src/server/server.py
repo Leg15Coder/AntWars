@@ -59,7 +59,7 @@ class MatchServer(FastServerEngine):
             self.logs.clear()
 
         num_teams = len(self.registered_tokens)
-        if num_teams == 0:
+        if num_teams < 2:
             self.start_lobby(True)
             return
 

@@ -1,7 +1,7 @@
 from typing import *
 import random
 from src.client.client import *
-from src.client.gamestate import *
+from src.client.gamestate import GameState
 
 
 class PathFinder:
@@ -59,7 +59,7 @@ class PathFinder:
 
 
 class Strategy:
-    def __init__(self, client: DatsPulseClient):
+    def __init__(self, client: AntWarsClient):
         self.client = client
 
     def make_turn(self):
@@ -98,13 +98,13 @@ class Strategy:
                                 key=lambda e: PathFinder.hex_distance((ant.q, ant.r), (e.q, e.r)))
             if PathFinder.hex_distance((ant.q, ant.r), (closest_enemy.q, closest_enemy.r)) <= 1:
                 # Если сражаемся - не надо двигаться
-                return list()
+                return []
             return self.find_path(ant.q, ant.r, ant.speed, closest_enemy.q, closest_enemy.r, state)
 
         # Если нет врагов - патрулируем колонию
         home_hex = state.spot
         if (ant.q, ant.r) == (home_hex['q'], home_hex['r']):
-            neighbors = PathFinder.hex_in_area((ant.q, ant.r), big_radius=3)
+            neighbors = PathFinder.hex_in_area((ant.q, ant.r), big_radius=6, small_radius=2)
             valid_neighbors = [n for n in neighbors if state.get_hex(n[0], n[1]) and
                                state.get_hex(n[0], n[1]).type not in (HexType.STONE, HexType.ANTHILL, HexType.ACID)]
             if valid_neighbors:

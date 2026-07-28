@@ -13,10 +13,11 @@ LOGS_PATH = os.getenv("LOGS_PATH")
 
 
 if __name__ == "__main__":
+    load_dotenv()
     API_KEY = str(uuid4())
-    BASE_URL = "http://127.0.0.1:8888"
+    BASE_URL = os.getenv("SERVER_URL")
 
-    client = DatsPulseClient(BASE_URL, API_KEY)
+    client = AntWarsClient(BASE_URL, API_KEY)
     strategy = Strategy(client)
     visualizer = AsyncVisualizer('Simple Algorithm')
 
@@ -37,7 +38,7 @@ if __name__ == "__main__":
                 print(f"Ожидайте {time_to_wait:.1f} сек перед следующим ходом...")
                 time.sleep(time_to_wait)
 
-            with open(f'{LOGS_PATH}\log-{datetime.now().strftime('%Y-%m-%d_%H-%M')}.txt', 'w', encoding='utf-8') as file:
+            with open(rf'{LOGS_PATH}\log-{datetime.now().strftime('%Y-%m-%d_%H-%M')}.txt', 'w', encoding='utf-8') as file:
                 file.write(str(client.get_logs()) + '\n')
     except Exception as ex:
         print(ex)
