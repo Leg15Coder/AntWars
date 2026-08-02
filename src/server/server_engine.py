@@ -93,6 +93,7 @@ class FastServerEngine:
         self.generate_map()
 
         dist = max(4, self.map_radius - 3)
+        random.shuffle(team_tokens)
         for idx, token in enumerate(team_tokens):
             angle = (2 * math.pi * idx) / len(team_tokens)
             cq = int(round(dist * math.cos(angle)))

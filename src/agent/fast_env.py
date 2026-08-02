@@ -7,19 +7,22 @@ HEX_DIRECTIONS = [
     (0, 0), (1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)
 ]
 
-MAX_ANTS = 128
-MAX_FOOD = 255
-MAX_ENEMIES = 255
+MAX_ANTS = 64
+MAX_FOOD = 64
+MAX_ENEMIES = 64
 
-LIMITS = 1024
+LIMITS = 512
 TURNS = 300
 
-DAMAGE_WEIGHT = 0.2
-ANTHILL_NEAR_WEIGHT = 0.1
-SCORE_WEIGHT = 4.0
-ANT_WEIGHT = 10.0
-FOOD_WEIGHT = 2.0
-FOOD_NEAR_WEIGHT = 0.3
+HEX_EXPLORE_WEIGHT = 0.1
+DAMAGE_WEIGHT = 0.3
+ANTHILL_NEAR_WEIGHT = 0.3
+SCORE_WEIGHT = 64.0
+ANT_WEIGHT = 8.0
+FOOD_WEIGHT = 4.0
+FOOD_NEAR_WEIGHT = 0.05
+MOVEMENT_WEIGHT = 0.01
+HEAL_WEIGHT = 0.01
 
 
 class FastAntWarsEnv(gym.Env):
@@ -31,6 +34,7 @@ class FastAntWarsEnv(gym.Env):
         self.bot_tokens = [f"bot_{i}" for i in range(1, num_bots)]
         self.prev_score = 0
         self.prev_ant_count = 0
+        self.visited_hexes = set()
 
         self.action_space = spaces.MultiDiscrete([7] * MAX_ANTS)
         obs_dim = MAX_ANTS * 5 + MAX_FOOD * 3 + MAX_ENEMIES * 3
@@ -44,7 +48,7 @@ class FastAntWarsEnv(gym.Env):
 
         for idx in range(MAX_ANTS):
             if idx >= len(my_ants):
-                masks[idx, 0] = True  # Для несуществующих муравьёв разрешаем только "простой"
+                masks[idx, 0] = True  # Для несуществующих муравьёв разрешаем только покой
                 continue
 
             ant = my_ants[idx]
@@ -56,10 +60,11 @@ class FastAntWarsEnv(gym.Env):
                     continue
 
                 tq, tr = cq + dq, cr + dr
-                target_hex = self.engine.hex_map.get((tq, tr))
+                # Поддерживаем поиск по кортежу и по строке
+                target_hex = self.engine.hex_map.get((tq, tr)) or self.engine.hex_map.get(f"{tq},{tr}")
 
-                # 1. Непроходимый гекс или за пределами карты
-                if not target_hex or target_hex["type"] == 5 or target_hex["cost"] >= 999:
+                # ИСПРАВЛЕНО: Запрещаем движение ТОЛЬКО если гекс известен И это камень/стена
+                if target_hex and (target_hex.get("type") == 5 or target_hex.get("cost", 1) >= 999):
                     continue
 
                 # 2. Нельзя на чужой муравейник
@@ -84,6 +89,7 @@ class FastAntWarsEnv(gym.Env):
 
         self.prev_score = 0
         self.prev_ant_count = 1
+        self.visited_hexes = set()
         state = self.engine.get_state(self.agent_token)
         return self._extract_obs(state), {"action_mask": self.get_action_masks()}
 
@@ -130,76 +136,95 @@ class FastAntWarsEnv(gym.Env):
         next_mask = self.get_action_masks()
         return obs, reward, done, False, {"action_mask": next_mask}
 
-    def calculate_reward(self, my_ants_before, state_after) -> float:
-        reward = 0.0
+    def calculate_reward(self, my_ants_before, state_after) -> np.ndarray:
+        rewards = np.zeros(MAX_ANTS, dtype=np.float32)
         score_diff = state_after["score"] - self.prev_score
-        reward += score_diff * SCORE_WEIGHT
-        self.prev_score = state_after["score"]
-
-        ant_count = len(state_after["ants"])
-        ant_diff = ant_count - self.prev_ant_count
-        reward += ant_diff * ANT_WEIGHT
-        self.prev_ant_count = ant_count
+        self.prev_score = state_after["score"]  # ИСПРАВЛЕНО: обновляем сохранённый счёт
 
         home_spot = state_after.get("spot", {"q": 0, "r": 0})
 
-        for ant_after in state_after["ants"]:
+        for idx in range(MAX_ANTS):
+            if idx >= len(state_after["ants"]):
+                continue
+
+            ant_after = state_after["ants"][idx]
             ant_id = ant_after["id"]
             ant_before = my_ants_before.get(ant_id)
+            rewards[idx] += ANT_WEIGHT * (len(state_after["ants"]) - len(my_ants_before))
 
             if ant_before:
-                # Штраф за потерю здоровья (кислота, уроны)
+                pos_after = (ant_after["q"], ant_after["r"])
+
+                # 0. Награда за исследование НОВОЙ клетки (+0.2)
+                if pos_after not in self.visited_hexes:
+                    rewards[idx] += HEX_EXPLORE_WEIGHT
+                    self.visited_hexes.add(pos_after)
+
+                # 1. Персональный урон
                 hp_diff = ant_after["health"] - ant_before["health"]
                 if hp_diff < 0:
-                    reward += hp_diff * DAMAGE_WEIGHT  # hp_diff отрицательный
+                    rewards[idx] += hp_diff * DAMAGE_WEIGHT
+                else:
+                    rewards[idx] += hp_diff * HEAL_WEIGHT
 
-                # Награда за физический подбор ресурса
+                # 2. Персональный подбор еды
                 if ant_before["food"] is None and ant_after["food"] is not None:
-                    reward += FOOD_WEIGHT
+                    rewards[idx] += FOOD_WEIGHT
 
-                # Награда за приближение к целевой точке (Potential-based Reward)
+                # 3. Награда за сдачу ресурса
+                if score_diff > 0 and ant_before["food"] is not None and ant_after["food"] is None:
+                    rewards[idx] += score_diff * SCORE_WEIGHT
+
+                # 4. Прогресс движения
                 if ant_after["food"] is not None:
-                    # Несёт еду -> цель: муравейник
+                    # Несёт еду -> к муравейнику
                     dist_before = hex_distance(ant_before["q"], ant_before["r"], home_spot["q"], home_spot["r"])
                     dist_after = hex_distance(ant_after["q"], ant_after["r"], home_spot["q"], home_spot["r"])
-                    reward += (dist_before - dist_after) * ANTHILL_NEAR_WEIGHT
+                    rewards[idx] += (dist_before - dist_after) * ANTHILL_NEAR_WEIGHT
                 elif state_after["food"]:
-                    # Ищет еду -> цель: ближайший ресурс
-                    closest_food = min(state_after["food"], key=lambda f: hex_distance(ant_after["q"], ant_after["r"], f["q"], f["r"]))
+                    # Ищет еду -> к ближайшей еде
+                    closest_food = min(state_after["food"], key=lambda f: hex_distance(ant_before["q"], ant_before["r"], f["q"], f["r"]))
                     dist_before = hex_distance(ant_before["q"], ant_before["r"], closest_food["q"], closest_food["r"])
                     dist_after = hex_distance(ant_after["q"], ant_after["r"], closest_food["q"], closest_food["r"])
-                    reward += (dist_before - dist_after) * FOOD_NEAR_WEIGHT
+                    rewards[idx] += (dist_before - dist_after) * FOOD_NEAR_WEIGHT
+                else:
+                    # Маленький бонус за движение (чтобы не стоял на месте, когда еды не видно)
+                    if ant_before["q"] != ant_after["q"] or ant_before["r"] != ant_after["r"]:
+                        rewards[idx] += MOVEMENT_WEIGHT
 
-        return reward
+                if ant_before["q"] != ant_after["q"] or ant_before["r"] != ant_after["r"]:
+                    rewards[idx] += MOVEMENT_WEIGHT
+
+        return rewards
 
     def _extract_obs(self, state: dict) -> np.ndarray:
         spot = state.get("spot", {"q": 0, "r": 0})
         sq, sr = spot["q"], spot["r"]
         obs = []
 
-        # Муравьи
+        # 1. Муравьи
+        ants = state["ants"]
         for i in range(MAX_ANTS):
-            if i < len(state["ants"]):
-                a = state["ants"][i]
-                has_food = 1.0 if a["food"] else 0.0
-                obs.extend([a["q"] - sq, a["r"] - sr, a["health"], a["type"], has_food])
+            if i < len(ants):
+                a = ants[i]
+                obs.extend([a["q"] - sq, a["r"] - sr, a["health"], a["type"], 1.0 if a["food"] else 0.0])
             else:
                 obs.extend([0, 0, 0, -1, 0])
 
-        # Еда
-        food_sorted = sorted(state["food"], key=lambda f: hex_distance(sq, sr, f["q"], f["r"]))
+        # 2. Еда (берём первые N без медленной сортировки по всей карте)
+        foods = state["food"][:MAX_FOOD]
         for i in range(MAX_FOOD):
-            if i < len(food_sorted):
-                f = food_sorted[i]
+            if i < len(foods):
+                f = foods[i]
                 obs.extend([f["q"] - sq, f["r"] - sr, f["amount"]])
             else:
                 obs.extend([0, 0, 0])
 
-        # Враги
-        enemies_sorted = sorted(state["enemies"], key=lambda e: hex_distance(sq, sr, e["q"], e["r"]))
+        # 3. Враги
+        enemies = state["enemies"][:MAX_ENEMIES]
         for i in range(MAX_ENEMIES):
-            if i < len(enemies_sorted):
-                e = enemies_sorted[i]
+            if i < len(enemies):
+                e = enemies[i]
                 obs.extend([e["q"] - sq, e["r"] - sr, e["health"]])
             else:
                 obs.extend([0, 0, 0])

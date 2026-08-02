@@ -62,9 +62,7 @@ class Strategy:
     def __init__(self, client: AntWarsClient):
         self.client = client
 
-    def make_turn(self):
-        state = self.client.get_arena_state()
-
+    def make_turn(self, state: GameState):
         moves = []
 
         for ant in state.ants:
@@ -74,6 +72,11 @@ class Strategy:
                 path = self.soldier_strategy(ant, state)
             else:  # AntType.WORKER
                 path = self.worker_strategy(ant, state)
+
+            for h in PathFinder.get_neighbors(ant.q, ant.r):
+                hex = state.get_hex(h[0], h[1])
+                if hex is None:
+                    state.borders.add(h)
 
             if path:
                 moves.append({
@@ -88,7 +91,26 @@ class Strategy:
         # Ищем ближайшее тёмное пятно
         unexplored = self.find_closest_unexplored(ant.q, ant.r, state)
         if unexplored:
-            return self.find_path(ant.q, ant.r, ant.speed, unexplored[0], unexplored[1], state)
+            path = self.find_path(ant.q, ant.r, ant.speed, unexplored[0], unexplored[1], state)
+
+            if path:
+                return path
+
+        neighbors = PathFinder.get_neighbors(ant.q, ant.r)
+        valid_neighbors = []
+        for nq, nr in neighbors:
+            hex_obj = state.get_hex(nq, nr)
+
+            if hex_obj and hex_obj.type == HexType.STONE:
+                continue
+
+            occupied = any(a.q == nq and a.r == nr for a in state.ants)
+            if not occupied:
+                valid_neighbors.append((nq, nr))
+
+        if valid_neighbors:
+            return [random.choice(valid_neighbors)]
+
         return []
 
     def soldier_strategy(self, ant: Ant, state: GameState) -> List[Tuple[int, int]]:
@@ -148,7 +170,7 @@ class Strategy:
         for hex in state.map:
             neighbors = PathFinder.get_neighbors(hex.q, hex.r)
             for nq, nr in neighbors:
-                if not state.get_hex(nq, nr):
+                if not state.get_hex(nq, nr) and not state.is_border(nq, nr):
                     edge_hexes.append((nq, nr))
 
         if edge_hexes:
@@ -163,26 +185,28 @@ class Strategy:
          """
         # TODO: реализовать правильный поиск пути с шестнадцатеричными затратами и препятствиями
         # Это упрощенная версия, которая просто движется прямо к цели
-        path = list()
+        path = []
         current_q, current_r = start_q, start_r
+        my_home_coords = {(h['q'], h['r']) for h in state.home}
 
         while (current_q, current_r) != (target_q, target_r):
             # Все возможные клетки для передвижения
             neighbors = PathFinder.get_neighbors(current_q, current_r)
 
             # Удаляем невалидные гексы
-            valid_neighbors = list()
+            valid_neighbors = []
             for nq, nr in neighbors:
                 hex = state.get_hex(nq, nr)
-                if hex and hex.type not in (HexType.STONE, HexType.ANTHILL):
-                    # Проверяем занят ли гекс
-                    occupied = False
-                    for ant in state.ants:
-                        if ant.q == nq and ant.r == nr: #and ant.id != state.get_ant_by_id(current_q, current_r):
-                            occupied = True
-                            break
-                    if not occupied:
-                        valid_neighbors.append((nq, nr))
+
+                is_stone = hex and hex.type == HexType.STONE
+                is_enemy_anthill = hex and hex.type == HexType.ANTHILL and (nq, nr) not in my_home_coords
+
+                if is_stone or is_enemy_anthill:
+                    continue
+
+                occupied = any(ant.q == nq and ant.r == nr for ant in state.ants)
+                if not occupied:
+                    valid_neighbors.append((nq, nr))
 
             if not valid_neighbors:
                 break  # Нет пути

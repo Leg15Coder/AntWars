@@ -32,7 +32,7 @@ if __name__ == "__main__":
 
             visualizer.update(state)
 
-            strategy.make_turn()
+            strategy.make_turn(state)
             time_to_wait = max(0, state.next_turn_in)
             if time_to_wait > 0:
                 print(f"Ожидайте {time_to_wait:.1f} сек перед следующим ходом...")

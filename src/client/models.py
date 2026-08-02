@@ -59,6 +59,9 @@ class Hex:
         self.cost = cost
         self.is_visible = is_visible
 
+        self.food = None
+        self.entity = None
+
     def __str__(self):
         return f"Hex({self.q}, {self.r}, {self.type.name}, cost={self.cost})"
 

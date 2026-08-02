@@ -12,6 +12,7 @@ class AntWarsClient:
         self.session.headers.update({'X-Auth-Token': f'{self.api_key}'})
         self.last_request_time = 0
         self.known_map: Dict[Tuple[int, int], Hex] = {}
+        self.borders = set()
 
     def _rate_limit(self):
         elapsed = time.time() - self.last_request_time
@@ -24,8 +25,11 @@ class AntWarsClient:
         self._rate_limit()
         response = self.session.get(f'{self.base_url}/api/arena')
         response.raise_for_status()
-        state = GameState(response.json(), prev_map=self.known_map)
+        data = response.json()
+        data['borders'] = self.borders
+        state = GameState(data, prev_map=self.known_map)
         self.known_map = state.known_map
+        self.borders = state.borders
         return state
 
     def send_moves(self, moves: List[Dict]) -> bool:
